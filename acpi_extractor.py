@@ -140,7 +140,7 @@ def process_acpi_tables(acpi_dirs, output_dir):
                     if oem_table_id and oem_table_id != "_" and oem_table_id != "__" and oem_table_id != "___" and oem_table_id != "____" and oem_table_id != "_____" and oem_table_id != "______" and oem_table_id != "_______" and oem_table_id != "________":
                         filename_parts.append(oem_table_id)
                     
-                    filename = "_".join(filename_parts)
+                    filename = "-".join(filename_parts)
                 else:
                     # Read the first 4 bytes of body.bin if header parsing failed
                     with open(body_bin_path, 'rb') as f:
