@@ -9,6 +9,7 @@ import sys
 import subprocess
 import shutil
 import binascii
+import struct
 
 # Target GUID for ACPI tables
 TARGET_GUID = "7E374E25-8E01-4FEE-87F2-390C23C606CD"
@@ -70,6 +71,40 @@ def find_acpi_directories(extract_dir):
     return acpi_dirs
 
 
+def parse_acpi_header(file_path):
+    """Parse the ACPI table header from an AML file."""
+    try:
+        with open(file_path, 'rb') as f:
+            # Read the ACPI table header (36 bytes)
+            header = f.read(36)
+            
+            if len(header) < 36:
+                return None
+            
+            # Extract the signature (first 4 bytes)
+            signature = header[0:4].decode('ascii', errors='ignore')
+            
+            # Extract the OEM ID (bytes 10-15, 6 bytes)
+            oem_id = header[10:16].decode('ascii', errors='ignore').strip()
+            
+            # Extract the OEM Table ID (bytes 16-23, 8 bytes)
+            oem_table_id = header[16:24].decode('ascii', errors='ignore').strip()
+            
+            # Extract table revision (byte 8, 1 byte)
+            revision = header[8]
+            
+            return {
+                'signature': signature,
+                'oem_id': oem_id,
+                'oem_table_id': oem_table_id,
+                'revision': revision
+            }
+    except Exception as e:
+        print(f"Error parsing ACPI header: {e}")
+    
+    return None
+
+
 def process_acpi_tables(acpi_dirs, output_dir):
     """Process each ACPI table and save to output directory."""
     os.makedirs(output_dir, exist_ok=True)
@@ -88,21 +123,40 @@ def process_acpi_tables(acpi_dirs, output_dir):
             body_bin_path = os.path.join(section_path, "body.bin")
             
             if os.path.isfile(body_bin_path):
-                # Read the first 4 bytes of body.bin to use as filename
-                with open(body_bin_path, 'rb') as f:
-                    signature = f.read(4)
-                    if len(signature) < 4:
-                        continue
+                # Extract ACPI header information
+                header_info = parse_acpi_header(body_bin_path)
+                
+                if header_info and all(k in header_info for k in ('signature', 'oem_id', 'oem_table_id')):
+                    # Use the extracted information for the filename
+                    # Clean any invalid characters first
+                    signature = ''.join(c if c.isalnum() or c in '-_' else '_' for c in header_info['signature'])
+                    oem_id = ''.join(c if c.isalnum() or c in '-_' else '_' for c in header_info['oem_id'])
+                    oem_table_id = ''.join(c if c.isalnum() or c in '-_' else '_' for c in header_info['oem_table_id'])
                     
-                    # Convert to ASCII string
-                    try:
-                        signature_str = signature.decode('ascii')
-                    except UnicodeDecodeError:
-                        # Use hex representation if not ASCII
-                        signature_str = binascii.hexlify(signature).decode('ascii')[:4]
+                    # Only include non-empty and non-underscore parts in the filename
+                    filename_parts = [signature]
+                    if oem_id and oem_id != "_" and oem_id != "__" and oem_id != "___" and oem_id != "____" and oem_id != "_____" and oem_id != "______":
+                        filename_parts.append(oem_id)
+                    if oem_table_id and oem_table_id != "_" and oem_table_id != "__" and oem_table_id != "___" and oem_table_id != "____" and oem_table_id != "_____" and oem_table_id != "______" and oem_table_id != "_______" and oem_table_id != "________":
+                        filename_parts.append(oem_table_id)
+                    
+                    filename = "_".join(filename_parts)
+                else:
+                    # Read the first 4 bytes of body.bin if header parsing failed
+                    with open(body_bin_path, 'rb') as f:
+                        signature = f.read(4)
+                        if len(signature) < 4:
+                            continue
+                        
+                        # Convert to ASCII string
+                        try:
+                            filename = signature.decode('ascii')
+                        except UnicodeDecodeError:
+                            # Use hex representation if not ASCII
+                            filename = binascii.hexlify(signature).decode('ascii')[:4]
                 
                 # Handle filename collisions
-                base_filename = signature_str
+                base_filename = filename
                 suffix = ""
                 counter = 2
                 
